@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
     agentFeedback: true,
   },
   output: "export",
+  basePath: "/my-dasha",
   images: {
     unoptimized: true,
   },
