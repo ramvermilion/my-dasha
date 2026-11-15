@@ -1,11 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  basePath: "/my-dasha",
-  output: "export",
   experimental: {
     agentFeedback: true,
   },
+  output: "export",
   images: {
     unoptimized: true,
   },
