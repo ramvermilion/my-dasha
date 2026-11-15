@@ -2,6 +2,7 @@
   "name": "my-dasha",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://ramvermilion.github.io/dasha",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
