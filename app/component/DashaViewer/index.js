@@ -1,9 +1,10 @@
 "use client";
+
 import React, { useState, useMemo, useEffect } from "react";
 import {
   calculateDashaLevels,
   getActiveDashaState,
-  calculateNavaTara,
+  calculateIntradayNavaTara,
   getUpcomingFavorableTaras,
   getBirthTimestamp,
   formatDisplayDate,
@@ -29,41 +30,79 @@ const LEVEL_LABELS = [
 ];
 
 export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
+  // 1. Defer `new Date()` to useEffect so Next.js static prerendering never blocks
+  const [today, setToday] = useState(null);
+  const [navigationPath, setNavigationPath] = useState(null);
+  const [showUpcomingTaras, setShowUpcomingTaras] = useState(false);
+
+  useEffect(() => {
+    setToday(new Date());
+  }, []);
+
   const birthTimestamp = useMemo(() => {
     return getBirthTimestamp(birthDetails);
   }, [birthDetails]);
 
-  const today = useMemo(() => new Date(), []);
-
+  // 2. Compute active Dasha & Nava Tara only after `today` is populated on the client
   const { activePath, activeNode } = useMemo(() => {
+    if (!today) return { activePath: [], activeNode: null };
     return getActiveDashaState(birthTimestamp, birthDetails.moonDegree, today);
   }, [birthTimestamp, birthDetails.moonDegree, today]);
 
   const navaTara = useMemo(() => {
-    return calculateNavaTara(birthDetails.moonDegree, today);
+    if (!today) return null;
+    return calculateIntradayNavaTara(birthDetails.moonDegree, today);
+  }, [birthDetails.moonDegree, today]);
+
+  const upcomingFavorableTaras = useMemo(() => {
+    if (!today) return [];
+    return getUpcomingFavorableTaras(birthDetails.moonDegree, today, 28);
   }, [birthDetails.moonDegree, today]);
 
   const defaultLevel3Path = useMemo(() => activePath.slice(0, 2), [activePath]);
-  const [navigationPath, setNavigationPath] = useState(defaultLevel3Path);
 
+  // Set default Level 3 path once `defaultLevel3Path` is computed on client mount
   useEffect(() => {
-    setNavigationPath(defaultLevel3Path);
+    if (defaultLevel3Path.length > 0) {
+      setNavigationPath(defaultLevel3Path);
+    }
   }, [defaultLevel3Path]);
 
+  const activeNavPath = navigationPath ?? defaultLevel3Path;
+
   const currentPeriods = useMemo(() => {
+    if (!today) return [];
     return calculateDashaLevels(
       birthTimestamp,
       birthDetails.moonDegree,
-      navigationPath,
+      activeNavPath,
     );
-  }, [birthTimestamp, birthDetails.moonDegree, navigationPath]);
+  }, [birthTimestamp, birthDetails.moonDegree, activeNavPath, today]);
+
+  // 3. Lightweight skeleton during SSR/prerender before client clock hydrates
+  if (!today || !navaTara) {
+    return (
+      <div className="w-full max-w-4xl mx-auto px-3 py-4 sm:p-6 lg:p-8 bg-slate-50/50 min-h-screen font-sans">
+        <div className="bg-white rounded-2xl sm:rounded-3xl shadow-xl border border-slate-100 p-6 space-y-5 animate-pulse">
+          <div className="h-7 w-56 bg-slate-200 rounded-lg" />
+          <div className="h-36 w-full bg-slate-200 rounded-2xl" />
+          <div className="h-24 w-full bg-slate-100 rounded-2xl" />
+          <div className="space-y-2.5">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="h-20 w-full bg-slate-100 rounded-2xl" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const isViewingDefaultActiveLevel3 =
-    navigationPath.join("-") === defaultLevel3Path.join("-");
+    activeNavPath.join("-") === defaultLevel3Path.join("-");
 
   const handleRowClick = (planetCode) => {
-    if (navigationPath.length < 3) {
-      setNavigationPath((prev) => [...prev, planetCode]);
+    if (activeNavPath.length < 3) {
+      setNavigationPath([...activeNavPath, planetCode]);
     }
   };
 
@@ -71,15 +110,9 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
     if (index === -1) {
       setNavigationPath([]);
     } else {
-      setNavigationPath((prev) => prev.slice(0, index + 1));
+      setNavigationPath(activeNavPath.slice(0, index + 1));
     }
   };
-
-  const [showUpcomingTaras, setShowUpcomingTaras] = useState(false);
-
-  const upcomingFavorableTaras = useMemo(() => {
-    return getUpcomingFavorableTaras(birthDetails.moonDegree, today, 28);
-  }, [birthDetails.moonDegree, today]);
 
   return (
     <div className="w-full max-w-4xl mx-auto px-3 py-4 sm:p-6 lg:p-8 bg-slate-50/50 min-h-screen font-sans box-border">
@@ -88,7 +121,7 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
         <div className="flex flex-col gap-2.5 border-b border-slate-100 pb-4">
           <div className="flex items-start justify-between gap-2">
             <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight leading-snug">
-              Vimshottari Dasha Explorer
+              Dasha Explorer
             </h1>
             <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-100 shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
@@ -109,7 +142,7 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
           </p>
         </div>
 
-        {/* Currently Active 4-Level Card (Mobile Optimized Grid) */}
+        {/* Currently Active 4-Level Card */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-950 via-indigo-900 to-slate-900 p-4 sm:p-6 text-white shadow-xl">
           <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -119,7 +152,6 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
                 Current Active Hierarchy
               </span>
 
-              {/* Responsive Hierarchy Grid (Stacks cleanly on 375px) */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {activePath.map((code, idx) => (
                   <div
@@ -140,7 +172,6 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
               </div>
             </div>
 
-            {/* Active Sookshma Range */}
             {activeNode && (
               <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
@@ -161,7 +192,6 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
           </div>
         </div>
 
-        {/* Nava Tara Card (Fully Stacked for Mobile) */}
         {/* Nava Tara Card + Next 4 Weeks Favorable Days */}
         <div
           className={`rounded-2xl p-4 border transition-all flex flex-col gap-3 ${
@@ -173,7 +203,7 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-                Nava Tara Today • Moon in {navaTara.currentNakshatra}
+                Nava Tara Right Now • Moon in {navaTara.currentNakshatra}
               </span>
               <div className="flex items-center gap-2 mt-1">
                 <h2 className="text-base sm:text-lg font-black text-slate-900">
@@ -192,6 +222,35 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
             </div>
           </div>
 
+          {/* Intraday Transit Alert (Shows when Moon changes Nakshatra later today) */}
+          {navaTara.nextShift && (
+            <div className="flex items-center justify-between gap-2 bg-white/90 px-3 py-2 rounded-xl border border-slate-200/70 text-xs">
+              <div className="text-slate-600">
+                <span className="font-bold text-slate-800">Later Today:</span>{" "}
+                Shifts to{" "}
+                <strong className="text-slate-900">
+                  {navaTara.nextShift.nakshatra}
+                </strong>{" "}
+                ({navaTara.nextShift.taraName} Tara) at{" "}
+                <span className="font-mono font-semibold text-indigo-700">
+                  {navaTara.nextShift.time.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </div>
+              <span
+                className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  navaTara.nextShift.isFavorable
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-amber-50 text-amber-800 border-amber-200"
+                }`}
+              >
+                {navaTara.nextShift.isFavorable ? "Favorable" : "Caution"}
+              </span>
+            </div>
+          )}
+
           <div className="pt-2 border-t border-slate-200/50">
             <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">
               Significance
@@ -201,39 +260,38 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
             </p>
           </div>
 
-          {/* Toggle Button for Next 4 Weeks Favorable Days */}
+          {/* Toggle Button for Next 4 Weeks Favorable Windows */}
           <div className="pt-2 border-t border-slate-200/50">
             <button
               onClick={() => setShowUpcomingTaras((prev) => !prev)}
               className="w-full flex items-center justify-between text-xs font-bold text-emerald-800 bg-white/80 hover:bg-white px-3 py-2 rounded-xl border border-emerald-200/80 transition-all cursor-pointer"
             >
               <span>
-                Favorable Days — Next 4 Weeks ({upcomingFavorableTaras.length}{" "}
-                days)
+                Favorable Windows — Next 4 Weeks (
+                {upcomingFavorableTaras.length} slots)
               </span>
               <span className="text-emerald-600 text-sm leading-none">
                 {showUpcomingTaras ? "−" : "+"}
               </span>
             </button>
 
-            {/* Collapsible Favorable Days List */}
             {showUpcomingTaras && (
               <div className="mt-2.5 max-h-64 overflow-y-auto space-y-1.5 pr-1">
-                {upcomingFavorableTaras.map((item) => (
+                {upcomingFavorableTaras.map((item, idx) => (
                   <div
-                    key={item.formattedDate}
+                    key={`${item.formattedDate}-${item.currentNakshatra}-${idx}`}
                     className="flex items-center justify-between gap-2 bg-white px-3 py-2 rounded-xl border border-emerald-100 text-xs"
                   >
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-mono font-bold text-slate-800">
                           {item.formattedDate}
                         </span>
                         <span className="text-slate-400 text-[11px]">
-                          ({item.dayName})
+                          ({item.dayName} • {item.timeWindow})
                         </span>
                         {item.isToday && (
-                          <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">
                             Today
                           </span>
                         )}
@@ -259,18 +317,18 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
             <button
               onClick={() => handleBreadcrumbClick(-1)}
               className={`hover:text-indigo-600 transition-colors cursor-pointer shrink-0 ${
-                navigationPath.length === 0 ? "font-bold text-indigo-600" : ""
+                activeNavPath.length === 0 ? "font-bold text-indigo-600" : ""
               }`}
             >
               Mahadasha
             </button>
-            {navigationPath.map((code, idx) => (
+            {activeNavPath.map((code, idx) => (
               <React.Fragment key={idx}>
                 <span className="text-slate-400">/</span>
                 <button
                   onClick={() => handleBreadcrumbClick(idx)}
                   className={`hover:text-indigo-600 transition-colors cursor-pointer shrink-0 ${
-                    navigationPath.length === idx + 1
+                    activeNavPath.length === idx + 1
                       ? "font-bold text-indigo-600"
                       : ""
                   }`}
@@ -294,17 +352,17 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
         {/* Sub-Period List Cards */}
         <div className="space-y-2.5">
           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">
-            {LEVEL_LABELS[navigationPath.length]} Periods
+            {LEVEL_LABELS[activeNavPath.length]} Periods
           </div>
 
           <div className="space-y-2">
             {currentPeriods.map((period) => {
-              const isSameBranch = navigationPath.every(
+              const isSameBranch = activeNavPath.every(
                 (code, idx) => activePath[idx] === code,
               );
               const isCurrentlyActiveToday =
                 isSameBranch &&
-                activePath[navigationPath.length] === period.planetCode;
+                activePath[activeNavPath.length] === period.planetCode;
 
               return (
                 <div
@@ -317,8 +375,8 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-extrabold text-slate-900 truncate">
-                      {navigationPath.length > 0
-                        ? `${navigationPath.join(" - ")} - `
+                      {activeNavPath.length > 0
+                        ? `${activeNavPath.join(" - ")} - `
                         : ""}
                       {period.planetCode}
                       <span className="font-normal text-slate-500 text-xs ml-1">
@@ -349,7 +407,7 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
                   </div>
 
                   <div className="pt-1 flex items-center justify-end">
-                    {navigationPath.length < 3 ? (
+                    {activeNavPath.length < 3 ? (
                       <button
                         onClick={() => handleRowClick(period.planetCode)}
                         className="w-full sm:w-auto inline-flex items-center justify-center space-x-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl transition-all cursor-pointer"
