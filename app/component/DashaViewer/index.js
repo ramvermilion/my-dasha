@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import {
   calculateDashaLevels,
   getActiveDashaState,
-  calculateNavaTara,
+  calculateIntradayNavaTara,
   getUpcomingFavorableTaras,
   getBirthTimestamp,
   formatDisplayDate,
@@ -51,7 +51,7 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
 
   const navaTara = useMemo(() => {
     if (!today) return null;
-    return calculateNavaTara(birthDetails.moonDegree, today);
+    return calculateIntradayNavaTara(birthDetails.moonDegree, today);
   }, [birthDetails.moonDegree, today]);
 
   const upcomingFavorableTaras = useMemo(() => {
@@ -203,7 +203,7 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-                Nava Tara Today • Moon in {navaTara.currentNakshatra}
+                Nava Tara Right Now • Moon in {navaTara.currentNakshatra}
               </span>
               <div className="flex items-center gap-2 mt-1">
                 <h2 className="text-base sm:text-lg font-black text-slate-900">
@@ -222,6 +222,35 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
             </div>
           </div>
 
+          {/* Intraday Transit Alert (Shows when Moon changes Nakshatra later today) */}
+          {navaTara.nextShift && (
+            <div className="flex items-center justify-between gap-2 bg-white/90 px-3 py-2 rounded-xl border border-slate-200/70 text-xs">
+              <div className="text-slate-600">
+                <span className="font-bold text-slate-800">Later Today:</span>{" "}
+                Shifts to{" "}
+                <strong className="text-slate-900">
+                  {navaTara.nextShift.nakshatra}
+                </strong>{" "}
+                ({navaTara.nextShift.taraName} Tara) at{" "}
+                <span className="font-mono font-semibold text-indigo-700">
+                  {navaTara.nextShift.time.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </div>
+              <span
+                className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  navaTara.nextShift.isFavorable
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-amber-50 text-amber-800 border-amber-200"
+                }`}
+              >
+                {navaTara.nextShift.isFavorable ? "Favorable" : "Caution"}
+              </span>
+            </div>
+          )}
+
           <div className="pt-2 border-t border-slate-200/50">
             <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">
               Significance
@@ -231,14 +260,15 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
             </p>
           </div>
 
+          {/* Toggle Button for Next 4 Weeks Favorable Windows */}
           <div className="pt-2 border-t border-slate-200/50">
             <button
               onClick={() => setShowUpcomingTaras((prev) => !prev)}
               className="w-full flex items-center justify-between text-xs font-bold text-emerald-800 bg-white/80 hover:bg-white px-3 py-2 rounded-xl border border-emerald-200/80 transition-all cursor-pointer"
             >
               <span>
-                Favorable Days — Next 4 Weeks ({upcomingFavorableTaras.length}{" "}
-                days)
+                Favorable Windows — Next 4 Weeks (
+                {upcomingFavorableTaras.length} slots)
               </span>
               <span className="text-emerald-600 text-sm leading-none">
                 {showUpcomingTaras ? "−" : "+"}
@@ -247,18 +277,18 @@ export default function DashaViewer({ birthDetails = DEFAULT_BIRTH_DETAILS }) {
 
             {showUpcomingTaras && (
               <div className="mt-2.5 max-h-64 overflow-y-auto space-y-1.5 pr-1">
-                {upcomingFavorableTaras.map((item) => (
+                {upcomingFavorableTaras.map((item, idx) => (
                   <div
-                    key={item.formattedDate}
+                    key={`${item.formattedDate}-${item.currentNakshatra}-${idx}`}
                     className="flex items-center justify-between gap-2 bg-white px-3 py-2 rounded-xl border border-emerald-100 text-xs"
                   >
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-mono font-bold text-slate-800">
                           {item.formattedDate}
                         </span>
                         <span className="text-slate-400 text-[11px]">
-                          ({item.dayName})
+                          ({item.dayName} • {item.timeWindow})
                         </span>
                         {item.isToday && (
                           <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">

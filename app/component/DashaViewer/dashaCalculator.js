@@ -308,20 +308,63 @@ export function getSiderealMoonDegree(dateObj = new Date()) {
   return norm360(tropicalMoon - ayanamsa);
 }
 
-export function calculateNavaTara(birthMoonDegree, targetDateObj = new Date()) {
-  const currentMoonDegree = getSiderealMoonDegree(targetDateObj);
+/**
+ * Computes precise intraday Nava Tara transitions for a given date
+ */
+/**
+ * Computes exact local-day intraday Nava Tara & finds the exact transition time
+ */
+export function calculateIntradayNavaTara(
+  birthMoonDegree,
+  targetDateObj = new Date(),
+) {
   const nakSpan = 360 / 27;
+  const norm360 = (deg) => ((deg % 360) + 360) % 360;
 
-  const birthNakIndex = Math.floor(
-    (((birthMoonDegree % 360) + 360) % 360) / nakSpan,
-  );
-  const currentNakIndex = Math.floor(
-    (((currentMoonDegree % 360) + 360) % 360) / nakSpan,
-  );
+  const birthNakIndex = Math.floor(norm360(birthMoonDegree) / nakSpan);
+  const currentMoonDeg = getSiderealMoonDegree(targetDateObj);
+  const currentNakIndex = Math.floor(norm360(currentMoonDeg) / nakSpan);
 
   const count = ((currentNakIndex - birthNakIndex + 27) % 27) + 1;
   const taraNumber = ((count - 1) % 9) + 1;
   const taraMeta = NAVA_TARAS.find((t) => t.id === taraNumber);
+
+  // Scan remaining minutes of the user's local day in 15-minute steps to find exact transition
+  let nextShift = null;
+  const endOfLocalDay = new Date(
+    targetDateObj.getFullYear(),
+    targetDateObj.getMonth(),
+    targetDateObj.getDate(),
+    23,
+    59,
+    59,
+  );
+
+  const stepMs = 15 * 60 * 1000;
+  for (
+    let t = targetDateObj.getTime() + stepMs;
+    t <= endOfLocalDay.getTime();
+    t += stepMs
+  ) {
+    const probeDate = new Date(t);
+    const probeNakIndex = Math.floor(
+      norm360(getSiderealMoonDegree(probeDate)) / nakSpan,
+    );
+
+    if (probeNakIndex !== currentNakIndex) {
+      const futureCount = ((probeNakIndex - birthNakIndex + 27) % 27) + 1;
+      const futureTaraNum = ((futureCount - 1) % 9) + 1;
+      const futureMeta = NAVA_TARAS.find((t) => t.id === futureTaraNum);
+
+      nextShift = {
+        time: probeDate,
+        nakshatra: NAKSHATRAS[probeNakIndex],
+        taraName: futureMeta.name,
+        isFavorable: futureMeta.isFavorable,
+      };
+      break;
+    }
+  }
 
   return {
     birthNakshatra: NAKSHATRAS[birthNakIndex],
@@ -332,41 +375,86 @@ export function calculateNavaTara(birthMoonDegree, targetDateObj = new Date()) {
     isFavorable: taraMeta.isFavorable,
     statusLabel: taraMeta.isFavorable ? "Favorable" : "Observe Caution",
     significance: taraMeta.significance,
+    nextShift,
   };
 }
 
-
 /**
- * Returns only the favorable Nava Tara days for the next `daysCount` days (default 28 = 4 weeks)
+ * Scans the next `daysCount` days (morning & evening slots) and returns all favorable Tara windows
  */
 export function getUpcomingFavorableTaras(
   birthMoonDegree,
   startDateObj = new Date(),
-  daysCount = 28
+  daysCount = 28,
 ) {
-  const favorableDays = [];
+  const favorableWindows = [];
   const baseYear = startDateObj.getFullYear();
   const baseMonth = startDateObj.getMonth();
   const baseDay = startDateObj.getDate();
 
   for (let offset = 0; offset < daysCount; offset++) {
-    // Evaluate at midday (12:00 UTC) so daily Moon transit reflects the bulk of the day
-    const targetDate = new Date(Date.UTC(baseYear, baseMonth, baseDay + offset, 12, 0, 0));
-    const taraResult = calculateNavaTara(birthMoonDegree, targetDate);
+    const morningDate = new Date(
+      baseYear,
+      baseMonth,
+      baseDay + offset,
+      8,
+      0,
+      0,
+    );
+    const eveningDate = new Date(
+      baseYear,
+      baseMonth,
+      baseDay + offset,
+      20,
+      0,
+      0,
+    );
 
-    if (taraResult.isFavorable) {
-      favorableDays.push({
-        date: targetDate,
-        formattedDate: formatDisplayDate(targetDate),
-        dayName: targetDate.toLocaleDateString("en-US", {
-          weekday: "short",
-          timeZone: "UTC",
-        }),
+    const morningTara = calculateIntradayNavaTara(birthMoonDegree, morningDate);
+    const eveningTara = calculateIntradayNavaTara(birthMoonDegree, eveningDate);
+
+    const dd = String(morningDate.getDate()).padStart(2, "0");
+    const mm = String(morningDate.getMonth() + 1).padStart(2, "0");
+    const yyyy = morningDate.getFullYear();
+    const formattedDate = `${dd}/${mm}/${yyyy}`;
+    const dayName = morningDate.toLocaleDateString("en-US", {
+      weekday: "short",
+    });
+
+    // If the same favorable Nakshatra covers the whole day, show as a single full-day entry
+    if (
+      morningTara.isFavorable &&
+      eveningTara.isFavorable &&
+      morningTara.currentNakshatra === eveningTara.currentNakshatra
+    ) {
+      favorableWindows.push({
+        formattedDate,
+        dayName,
+        timeWindow: "Full Day",
         isToday: offset === 0,
-        ...taraResult,
+        ...morningTara,
       });
+    } else {
+      if (morningTara.isFavorable) {
+        favorableWindows.push({
+          formattedDate,
+          dayName,
+          timeWindow: "Morning",
+          isToday: offset === 0,
+          ...morningTara,
+        });
+      }
+      if (eveningTara.isFavorable) {
+        favorableWindows.push({
+          formattedDate,
+          dayName,
+          timeWindow: "Evening",
+          isToday: offset === 0,
+          ...eveningTara,
+        });
+      }
     }
   }
 
-  return favorableDays;
+  return favorableWindows;
 }
